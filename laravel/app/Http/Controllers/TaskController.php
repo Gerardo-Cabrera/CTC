@@ -41,12 +41,31 @@ class TaskController extends Controller
     public function destroy(string $id)
     {
         $task = Task::findOrFail($id);
+        $likes = Like::where('task_id', $id)->pluck('count')->first();
         
-        if ($task->likes()->count() === 0) {
+        if ($likes == 0) {
             $task->delete();
             return response()->json(['message' => 'Tarea eliminada']);
         } else {
             return response()->json(['message' => 'No se puede eliminar una tarea con likes'], 400);
         }
+    }
+
+    /**
+     * Search task or tasks by name.
+     */
+    public function getTasksByName(Request $request) {
+        $taskName = $request->input('title');
+        $tasks = Task::where('title','ilike', '%' .$taskName . '%')->get();
+        return response()->json($tasks);
+    }
+
+    /**
+     * Search tasks by state.
+     */
+    public function getTasksByState(Request $request) {
+        $state = $request->input('state');
+        $tasks = Task::where('state', $state)->get();
+        return response()->json($tasks);
     }
 }

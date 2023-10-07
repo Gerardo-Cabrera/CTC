@@ -12,23 +12,12 @@ use Illuminate\Support\Facades\Log;
 class LikeController extends Controller
 {
     /**
-     * Insert likes to a task.
+     * Add likes to a task.
      */
-    public function like($taskId) {
-        try {            
-            $like = Like::firstOrNew(['task_id' => $taskId]);
-            $like->count = $like->count + 1;
-            $like->save();
-            $likesCount = Like::where('task_id', $taskId)->value('count');
-
-            // Emit an event to report the like counter update.
-            broadcast(new LikeUpdated($taskId, $likesCount));
-
-            return response()->json(['count' => $likesCount, 'success' => true], 200);
-        } catch (\Exception $e) {
-            Log::error('Error al manejar el like: ' . $e->getMessage());
-            return response()->json(['error' => 'Error al manejar el like'], 500);
-        }
+    public function addLike($taskId) {          
+        $like = new Like;
+        $likesCount = $like->addLike($taskId);
+        return $likesCount;
     }
 
     /**

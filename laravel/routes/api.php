@@ -18,10 +18,12 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/tasks', [TaskController::class, 'index']);
+Route::get('/tasks/by-name', [TaskController::class, 'getTasksByName']);
+Route::get('/tasks/by-state', [TaskController::class, 'getTasksByState']);
 Route::post('/tasks', [TaskController::class, 'store']);
 Route::delete('/tasks/{id}', [TaskController::class, 'destroy']);
 
-Route::post('/tasks/{taskId}/likes', [LikeController::class, 'like']);
+Route::post('/tasks/{taskId}/likes', [LikeController::class, 'addLike']);
 Route::get('/states', [StateController::class, 'index']);
 Route::get('/tasks/{taskId}/likes', [LikeController::class, 'getLikesByTask']);
 Route::put('/tasks/{taskId}/likes', [LikeController::class, 'updateLikesCount']);
