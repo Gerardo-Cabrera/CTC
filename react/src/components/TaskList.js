@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, InputGroup, FormControl, Button, ListGroup, Dropdown } from 'react-bootstrap';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -10,14 +10,52 @@ const socket = io.connect(process.env.REACT_APP_BACKEND_URL);
 
 function TaskList() {
   const [tasks, setTasks] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [filteredTasks, setFilteredTasks] = useState([]);
   const [states, setStates] = useState([]);
   const [likes, setLikes] = useState(0);
   const [likeButtonDisabled, setLikeButtonDisabled] = useState(false);
   const [disabledLikeButtons, setDisabledLikeButtons] = useState(new Set());
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
+    getStates();
+    tasksList();
+
+    socket.on('likeUpdated', (data) => {
+        const { taskId, count } = data;
+        // Actualizar el estado local con los likes actualizados
+        setLikes(data.count);
+        setTasks((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === taskId ? { ...task, likes: count } : task
+          )
+        );
+      });
+  
+      // Limpieza del efecto al desmontar el componente
+      return () => {
+        socket.disconnect();
+      };
+  }, []);
+
+  const getStates = () => {
+    fetch(`${process.env.REACT_APP_BACKEND_URL}/states`)
+    .then((response) => response.json())
+    .then((data) => {
+        setStates(data);
+    })
+    .catch((error) => {
+        Swal.fire({
+            icon: 'error',
+            title: 'ERROR',
+            text: 'Error al obtener los estados'
+        });
+        console.error('Error al obtener la lista de estados: ', error);
+    });
+  };
+
+  const tasksList = () => {
     fetch(`${process.env.REACT_APP_BACKEND_URL}/tasks`)
     .then((response) => response.json())
     .then((data) => {
@@ -42,46 +80,11 @@ function TaskList() {
         });
         console.error('Error al obtener las tareas: ', error);
     });
-
-    fetch(`${process.env.REACT_APP_BACKEND_URL}/states`)
-    .then((response) => response.json())
-    .then((data) => {
-        setStates(data);
-    })
-    .catch((error) => {
-        Swal.fire({
-            icon: 'error',
-            title: 'ERROR',
-            text: 'Error al obtener los estados'
-        });
-        console.error('Error al obtener la lista de estados: ', error);
-    });
-
-    socket.on('likeUpdated', (data) => {
-        const { taskId, count } = data;
-        // Actualizar el estado local con los likes actualizados
-        setLikes(data.count);
-        setTasks((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === taskId ? { ...task, likes: count } : task
-          )
-        );
-      });
-  
-      // Limpieza del efecto al desmontar el componente
-      return () => {
-        socket.disconnect();
-      };
-  }, []);
+  };
 
   const handleLike = (taskId) => {
     if (!disabledLikeButtons.has(taskId)) {
         setDisabledLikeButtons((prevSet) => new Set(prevSet.add(taskId)));
-
-        const updatedTasks = tasks.map((task) =>
-            task.id === taskId ? { ...task, likes: task.likes + 1 } : task
-        );
-        setTasks(updatedTasks);
 
         fetch(`${process.env.REACT_APP_BACKEND_URL}/tasks/${taskId}/likes`, {
             method: 'POST',
@@ -92,6 +95,10 @@ function TaskList() {
                 // Emitir el evento al servidor para notificar sobre el like actualizado
                 socket.emit('likeUpdated', { taskId, count: data.count });
                 setLikes((prevLikes) => ({...prevLikes, [taskId]: data.count,}));
+                const updatedTasks = tasks.map((task) =>
+                    task.id === taskId ? { ...task, likes: task.likes + 1 } : task
+                );
+                setTasks(updatedTasks);
             } else {
                 Swal.fire({
                     icon: 'error',
@@ -104,7 +111,8 @@ function TaskList() {
                     )
                 );
                 setTasks(tasks);
-                setLikeButtonDisabled(false);
+                likeButtonDisabled = false;
+                setLikeButtonDisabled(likeButtonDisabled);
             }
         })
         .catch((error) => {
@@ -120,7 +128,8 @@ function TaskList() {
                 )
             );
             setTasks(tasks);
-            setLikeButtonDisabled(false);
+            likeButtonDisabled = false;
+            setLikeButtonDisabled(likeButtonDisabled);
         });
     }
   };
@@ -160,13 +169,13 @@ function TaskList() {
                         );
                         setTasks(updatedTasks);
                         Swal.fire('¡Actualizado!', 'El número de likes ha sido modificado.', 'success');
+                        tasksList();
                     } else {
                         Swal.fire({
                             icon: 'error',
                             title: 'ERROR',
                             text: 'Error al editar el conteo de likes'
                         });
-                        throw new Error('Error al editar el conteo de likes.');
                     }
                 })
                 .catch(error => {
@@ -206,8 +215,9 @@ function TaskList() {
                     Swal.fire({
                         icon: 'success',
                         title: 'MENSAJE',
-                        text: 'Tarea eliminada'
+                        text: response.message
                     });
+                    tasksList();
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -235,21 +245,84 @@ function TaskList() {
     }
   };
 
-  const handleSearch = () => {
-    // Filtrar tareas por término de búsqueda
-    const filtered = tasks.filter((task) =>
-      task.title.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredTasks(filtered);
+  const handleSearch = async () => {    
+    let taskName = searchTerm;
+
+    try {
+        const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/tasks/by-name?title=${taskName}`);
+
+        if (response.ok) {
+            const tasks = await response.json();
+            // Actualizar el estado con las tareas filtradas por el término de búsqueda
+            const tasksWithLikes = await Promise.all(tasks.map(async (task) => {
+                const likesResponse = await fetch(`${process.env.REACT_APP_BACKEND_URL}/tasks/${task.id}/likes`);
+                const { likes } = await likesResponse.json();
+                return { ...task, likes };
+            }));
+            setFilteredTasks(tasksWithLikes);
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'ERROR',
+                text: 'Error al eliminar la tarea'
+            });
+        }
+    } catch (error) {
+        Swal.fire({
+            icon: 'error',
+            title: 'ERROR',
+            text: 'Error al buscar la tarea'
+        });
+        console.error('Error al buscar la tarea: ', error);
+    }
   };
 
-  const handleFilter = (state) => {
-    // Filtrar tareas por estado
-    if (state === 'todos') {
-      setFilteredTasks(tasks);
-    } else {
-      const filtered = tasks.filter((task) => task.state === state);
-      setFilteredTasks(filtered);
+  const handleFilter = async (state) => {
+    try {
+        let endpoint = `${process.env.REACT_APP_BACKEND_URL}/tasks`;
+
+        if (state !== 'todos') {
+            endpoint += `/by-state?state=${state}`;
+        }
+
+        const response = await fetch(endpoint);
+
+        if (response.ok) {
+            const tasks = await response.json();
+            const tasksWithLikes = await Promise.all(tasks.map(async (task) => {
+                const likesResponse = await fetch(`${process.env.REACT_APP_BACKEND_URL}/tasks/${task.id}/likes`);
+                const { likes } = await likesResponse.json();
+                return { ...task, likes };
+            }));
+            setFilteredTasks(tasksWithLikes);
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'ERROR',
+                text: 'Error al obtener las tareas'
+            });
+        }
+    } catch (error) {
+        Swal.fire({
+            icon: 'error',
+            title: 'ERROR',
+            text: 'Error al obtener las tareas'
+        });
+        console.error('Error al obtener las tareas: ', error);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const handleKeyUp = (e) => {
+    if (e.key === 'Backspace') {
+      if (searchTerm === '' || searchTerm.trim() === '') {
+        setFilteredTasks(tasks);
+      }
     }
   };
 
@@ -261,9 +334,13 @@ function TaskList() {
       <h1>Lista de Tareas</h1>
       <InputGroup className="mb-3">
         <FormControl 
+          id="buscar"
+          ref={searchInputRef}
           placeholder="Buscar por título" 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
         />
         <Button variant="outline-secondary" onClick={handleSearch}>Buscar</Button>
       </InputGroup>

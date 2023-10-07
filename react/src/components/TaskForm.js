@@ -16,7 +16,10 @@ function TaskForm() {
   });
 
   useEffect(() => {
-    // Llamar a la API para obtener la lista de estados
+    getStates();
+  }, []);
+
+  const getStates = () => {
     fetch(`${process.env.REACT_APP_BACKEND_URL}/states`)
     .then((response) => response.json())
     .then((data) => {
@@ -30,7 +33,7 @@ function TaskForm() {
         });
         console.error('Error al obtener la lista de estados: ', error);
     });
-  }, []);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
